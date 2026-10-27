@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "firefox-extension": {
+      "source": "codeatcode/oss-ai-skills",
+      "sourceType": "github",
+      "skillPath": "extend/firefox-extension/SKILL.md",
+      "computedHash": "125db3c50dbf80e73a29d546370b656b52360e4c95cd10388d8b8c95b5caf519"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube to MP3",
+  "version": "1.0.0",
+  "description": "Downloads the current YouTube video as MP3 on your server. Checks whether it is already in your library, then sends the video URL, metadata and YouTube cookies (including httpOnly) to yt.eijiens.ing.",
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "yt-mp3@eijiens.ing",
+      "strict_min_version": "109.0"
+    }
+  },
+
+  "background": {
+    "scripts": ["background.js"]
+  },
+
+  "action": {
+    "default_title": "Download current YouTube video as MP3",
+    "default_popup": "popup/popup.html"
+  },
+
+  "permissions": ["cookies", "tabs", "scripting"],
+  "host_permissions": ["*://*.youtube.com/*", "https://yt.eijiens.ing/*"]
+}

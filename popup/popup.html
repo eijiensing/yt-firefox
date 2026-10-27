@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>YouTube to MP3</title>
+        <link rel="stylesheet" href="popup.css" />
+    </head>
+    <body>
+        <main>
+            <h1>YouTube to MP3</h1>
+            <p id="video" class="video" title=""></p>
+            <p class="hint">
+                Checks whether the current video is already in your library,
+                then sends its URL, title, artist, duration and your YouTube
+                cookies (including
+                <code>httpOnly</code>) to your server for conversion.
+            </p>
+            <button id="download-btn" type="button" disabled>
+                Download MP3
+            </button>
+            <p id="status" role="status" aria-live="polite"></p>
+        </main>
+        <script src="popup.js"></script>
+    </body>
+</html>
