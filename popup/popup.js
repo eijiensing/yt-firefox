@@ -1,6 +1,7 @@
 // Matches https://www.youtube.com/... and bare https://youtube.com/...
 const YT_URL_RE = /^https?:\/\/([a-z0-9-]+\.)*youtube\.com(\/.*)?$/;
-const COOKIE_URL = "https://www.youtube.com/";
+const COOKIE_URLS = ["https://www.youtube.com/", "https://music.youtube.com/"];
+const YT_TITLE_SUFFIX_RE = /\s*-\s*YouTube(?:\s+Music)?\s*$/;
 
 // Human-readable descriptions for the server's `matches` values.
 const MATCH_LABELS = {
@@ -54,6 +55,25 @@ function isYoutubeUrl(url) {
   return typeof url === "string" && YT_URL_RE.test(url);
 }
 
+// Cookies for www.youtube.com and music.youtube.com overlap (most live on
+// `.youtube.com`), so merge both sets instead of listing the same ones twice.
+async function collectCookies() {
+  const responses = await Promise.all(
+    COOKIE_URLS.map((url) => browser.cookies.getAll({ url })),
+  );
+  const byIdentity = new Map();
+  for (const cookie of responses.flat()) {
+    const key = [
+      cookie.storeId || "",
+      cookie.domain || "",
+      cookie.path || "/",
+      cookie.name,
+    ].join("\t");
+    byIdentity.set(key, cookie);
+  }
+  return [...byIdentity.values()];
+}
+
 // Extract just the 11-character video id from a watch/shorts URL.
 // Returns null for pages that are not a single video (channels, playlists).
 function extractVideoId(url) {
@@ -79,6 +99,13 @@ function readPageMetadata() {
     const element = document.querySelector(selector);
     return element ? (element.getAttribute("content") || "").trim() : "";
   };
+  const firstText = (selectors) => {
+    for (const selector of selectors) {
+      const value = text(document.querySelector(selector));
+      if (value) return value;
+    }
+    return "";
+  };
 
   // YouTube exposes durations as ISO 8601 (e.g. "PT4M13S").
   const isoToSeconds = (value) => {
@@ -96,7 +123,38 @@ function readPageMetadata() {
     );
   };
 
+  // music.youtube.com is a separate app whose watch pages do not use the
+  // regular YouTube elements below. Its player bar holds the current track's
+  // title, artist and time, and is populated even when document.title is just
+  // "YouTube Music". These selectors simply match nothing on youtube.com.
+  const musicTitle = firstText([
+    "ytmusic-player-bar .title",
+    "ytmusic-player-bar #song-title",
+  ]);
+
+  const musicArtist = (() => {
+    const names = [];
+    for (const link of document.querySelectorAll(
+      "ytmusic-player-bar .byline a",
+    )) {
+      const href = link.getAttribute("href") || "";
+      // The byline is "Artist • Album • Year"; skip album/playlist links.
+      if (/\/browse\/MPRE|\/playlist(\?|$)/.test(href)) continue;
+      const name = text(link);
+      if (name) names.push(name);
+    }
+    // Multiple artists are separate links; join them the way the UI shows
+    // them. Fall back to the plain text before the album bullet.
+    return (
+      names.join(", ") ||
+      text(document.querySelector("ytmusic-player-bar .byline"))
+        .split(/[•·]/)[0]
+        .trim()
+    );
+  })();
+
   const title =
+    musicTitle ||
     content('meta[itemprop="name"]') ||
     text(
       document.querySelector(
@@ -104,17 +162,31 @@ function readPageMetadata() {
       ),
     ) ||
     text(document.querySelector("h1.ytd-watch-metadata")) ||
-    document.title.replace(/\s*-\s*YouTube\s*$/, "").trim();
+    document.title.replace(/\s*-\s*YouTube(?:\s+Music)?\s*$/, "").trim();
 
   const artist =
+    musicArtist ||
     content('#owner link[itemprop="name"]') ||
     text(document.querySelector("ytd-video-owner-renderer #channel-name a")) ||
     text(document.querySelector("#owner #channel-name a")) ||
     text(document.querySelector("ytd-channel-name a"));
 
+  // The music player bar shows "<current> / <total>"; take the total.
+  const timeInfo = firstText([
+    "ytmusic-player-bar .time-info",
+    "ytmusic-player-bar #time-info",
+  ]);
+  const timeInfoTotal = /\/\s*((?:\d+:)?\d+:\d+)\s*$/.exec(timeInfo);
+  const musicDuration = timeInfoTotal
+    ? timeInfoTotal[1]
+        .split(":")
+        .reduce((total, part) => total * 60 + Number(part), 0)
+    : 0;
+
   const video = document.querySelector("video");
   const duration =
     isoToSeconds(content('meta[itemprop="duration"]')) ||
+    musicDuration ||
     (video && Number.isFinite(video.duration) ? Math.round(video.duration) : 0);
 
   return { title, artist, duration };
@@ -133,7 +205,7 @@ async function collectYoutubeData(tab, videoId) {
     console.warn("Could not read page metadata:", err);
   }
 
-  const tabTitle = (tab.title || "").replace(/\s*-\s*YouTube\s*$/, "").trim();
+  const tabTitle = (tab.title || "").replace(YT_TITLE_SUFFIX_RE, "").trim();
 
   return {
     youtube_slug: videoId,
@@ -234,6 +306,13 @@ async function init() {
     setDownloadEnabled(false);
 
     youtubeData = await collectYoutubeData(tab, videoId);
+    // On music.youtube.com the tab title is often just "YouTube Music", so
+    // prefer the metadata read from the page.
+    if (youtubeData.title) {
+      videoEl.textContent = youtubeData.artist
+        ? `${youtubeData.title} — ${youtubeData.artist}`
+        : youtubeData.title;
+    }
     await checkExists();
   } catch (err) {
     console.error("Could not read the active tab:", err);
@@ -254,7 +333,7 @@ async function downloadMp3() {
   try {
     // The cookies API returns httpOnly cookies too (page JS cannot, but
     // privileged extension code can).
-    const cookies = await browser.cookies.getAll({ url: COOKIE_URL });
+    const cookies = await collectCookies();
 
     if (cookies.length === 0) {
       setStatus("No cookies found for youtube.com.", "error");

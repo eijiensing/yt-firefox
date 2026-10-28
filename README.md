@@ -11,14 +11,23 @@ YouTube's page UI: it reads the video's metadata from a few stable meta tags
 and injects a small function into the page on demand (via `scripting`), so a
 YouTube redesign does not break it.
 
+Both `youtube.com` and `music.youtube.com` are supported. YouTube Music watch
+pages (`music.youtube.com/watch?v=…`) use a different DOM, so their title,
+artist and duration are read from the player bar instead of the regular video
+page elements.
+
 ## How it works
 
 1. Click the extension's toolbar icon → the popup shows the current tab's video
    and a **Download MP3** button.
 2. The popup reads the active tab's URL (`tabs` permission) and injects a small
    function into the tab (`scripting` permission) to read the video title,
-   channel/artist and duration. Title falls back to the tab title if the page is
-   still loading.
+   channel/artist and duration. On `music.youtube.com` this reads
+   `ytmusic-player-bar` (title, byline artist, time info), since the regular
+   YouTube elements do not exist there. Title falls back to the tab title if
+   the page is still loading.
+   - `music.youtube.com/watch?v=…` URLs are treated like normal watch URLs;
+     playlist/browse pages without a `v` parameter keep the button disabled.
 3. The popup formats the metadata as `youtube_data`
    (`{ youtube_slug, title, artist, duration_seconds }`) and asks the background
    script to call `POST https://yt.eijiens.ing/exists` with the `x-api-key`
@@ -31,9 +40,10 @@ YouTube redesign does not break it.
    - Any other non-zero verdict / non-empty `matches` shows a warning, but the
      download stays enabled.
 4. On click, the popup reads the active tab's YouTube cookies with
-   `browser.cookies.getAll({ url: "https://www.youtube.com/" })` — including
-   httpOnly ones, which page JavaScript cannot see but privileged extension
-   code can — formats them as a Netscape `cookies.txt`, and sends
+   `browser.cookies.getAll` for both `https://www.youtube.com/` and
+   `https://music.youtube.com/` — including httpOnly ones, which page
+   JavaScript cannot see but privileged extension code can — merges the
+   overlapping results into a Netscape `cookies.txt`, and sends
    `{ cookies, youtube_data }` to `POST https://yt.eijiens.ing/download`.
    (Doing the fetch in the background means the request is not aborted if the
    popup closes while it's in flight.)
@@ -66,6 +76,7 @@ the top of `background.js`.
 1. Open Firefox and go to `about:debugging#/runtime/this-firefox`.
 2. Click **Load Temporary Add-on…** and select `manifest.json` from this folder.
 3. Or, with `web-ext` installed: `npx web-ext run --start-url https://www.youtube.com/`
+   (use `--start-url https://music.youtube.com/` to test YouTube Music)
 
 ## Optional toolbar icon
 
